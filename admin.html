@@ -1,0 +1,166 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>OMM - Admin</title>
+<link rel="stylesheet" href="style.css" />
+<style>
+.admin-container {
+  max-width: 600px;
+  margin: 2em auto;
+  background: #fff;
+  padding: 1em;
+  border-radius: 8px;
+  box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+}
+textarea {
+  width: 100%;
+  height: 150px;
+}
+button {
+  margin-top: 1em;
+}
+.poem-item {
+  border-top: 1px solid #ccc;
+  padding-top: 1em;
+  margin-top: 1em;
+}
+</style>
+</head>
+<body>
+<header>
+  <h1>Admin - Gestion des Poèmes</h1>
+</header>
+
+<main class="admin-container">
+  <div id="loginSection">
+    <h2>Connexion</h2>
+    <input type="password" id="tokenInput" placeholder="Votre token GitHub" />
+    <button onclick="login()">Se connecter</button>
+    <p id="loginStatus"></p>
+  </div>
+
+  <div id="adminSection" style="display:none;">
+    <h2>Ajouter un nouveau poème</h2>
+    <input type="text" id="titleInput" placeholder="Titre" /><br/>
+    <textarea id="contentInput" placeholder="Contenu du poème"></textarea><br/>
+    <button onclick="addPoem()">Ajouter</button>
+
+    <h2>Poèmes existants</h2>
+    <div id="poemList"></div>
+  </div>
+</main>
+
+<footer>
+  <p>&copy; 2025 OMM</p>
+</footer>
+
+<script>
+const repoOwner = 'youlou007';
+const repoName = 'OMM';
+const poemsPath = 'poems/poems.json';
+let token = '';
+
+async function login() {
+  token = document.getElementById('tokenInput').value.trim();
+  if (!token) {
+    document.getElementById('loginStatus').innerText = 'Veuillez entrer un token.';
+    return;
+  }
+  const valid = await verifyToken();
+  if (valid) {
+    document.getElementById('loginSection').style.display = 'none';
+    document.getElementById('adminSection').style.display = 'block';
+    loadPoems();
+  } else {
+    document.getElementById('loginStatus').innerText = 'Token invalide.';
+  }
+}
+
+async function verifyToken() {
+  const res = await fetch('https://api.github.com/user', {
+    headers: { 'Authorization': 'token ' + token }
+  });
+  return res.ok;
+}
+
+async function loadPoems() {
+  const res = await fetch(`https://raw.githubusercontent.com/${repoOwner}/${repoName}/main/${poemsPath}`);
+  if (!res.ok) {
+    document.getElementById('poemList').innerText = 'Impossible de charger les poèmes.';
+    return;
+  }
+  const poems = await res.json();
+  displayPoemList(poems);
+}
+
+function displayPoemList(poems) {
+  const container = document.getElementById('poemList');
+  container.innerHTML = '';
+  poems.forEach((poem, index) => {
+    const div = document.createElement('div');
+    div.className = 'poem-item';
+    div.innerHTML = `
+      <strong>${poem.title}</strong> (${poem.date})<br/>
+      <pre>${poem.content}</pre>
+      <button onclick="deletePoem(${index})">Supprimer</button>
+    `;
+    container.appendChild(div);
+  });
+}
+
+async function addPoem() {
+  const title = document.getElementById('titleInput').value.trim();
+  const content = document.getElementById('contentInput').value.trim();
+  if (!title || !content) {
+    alert('Veuillez remplir tous les champs.');
+    return;
+  }
+  const res = await fetch(`https://raw.githubusercontent.com/${repoOwner}/${repoName}/main/${poemsPath}`);
+  let poems = [];
+  if (res.ok) {
+    poems = await res.json();
+  }
+  poems.push({
+    title,
+    date: new Date().toISOString().split('T')[0],
+    content
+  });
+  await updatePoemsFile(poems, `Ajout du poème "${title}"`);
+  loadPoems();
+}
+
+async function deletePoem(index) {
+  const res = await fetch(`https://raw.githubusercontent.com/${repoOwner}/${repoName}/main/${poemsPath}`);
+  if (!res.ok) return;
+  const poems = await res.json();
+  const removed = poems.splice(index, 1);
+  await updatePoemsFile(poems, `Suppression du poème "${removed[0].title}"`);
+  loadPoems();
+}
+
+async function updatePoemsFile(poems, message) {
+  const getUrl = `https://api.github.com/repos/${repoOwner}/${repoName}/contents/${poemsPath}`;
+  const getRes = await fetch(getUrl, {
+    headers: { 'Authorization': 'token ' + token }
+  });
+  const fileData = await getRes.json();
+  const contentBase64 = btoa(unescape(encodeURIComponent(JSON.stringify(poems, null, 2))));
+  const body = {
+    message,
+    content: contentBase64,
+    sha: fileData.sha
+  };
+  await fetch(getUrl, {
+    method: 'PUT',
+    headers: {
+      'Authorization': 'token ' + token,
+      'Content-Type': 'application/json'
+    },
+    body: JSON.stringify(body)
+  });
+}
+</script>
+</body>
+</html>
